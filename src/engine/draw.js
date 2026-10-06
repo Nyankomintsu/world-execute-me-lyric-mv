@@ -49,6 +49,8 @@ export class Ctx {
     // video.exactRaster = true draws the 2D layers with Chrome's CPU rasteriser instead of the GPU one
     // (slower; only useful for debugging raster differences - both were measured to be repeatable).
     this.g = canvas.getContext('2d', { alpha, willReadFrequently: !!cfg.video.exactRaster });
+    // Safari before 18 has no reset(): giving the canvas its width again does the same (state back to defaults, bitmap cleared)
+    if (!this.g.reset) this.g.reset = () => { canvas.width = canvas.width; };
     this.transparent = alpha;
     this.cfg = cfg;
     this.palettes = palettes;

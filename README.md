@@ -79,7 +79,8 @@ Mili《world.execute(me);》的歌詞 MV 渲染工程,**第四版**。整支影�
    npm run preview
    ```
 
-4. 瀏覽器開啟 http://localhost:5173/ ,按 play。沒有音檔時畫面仍可無聲播放,頁面下方的 `sound` 一行會說明原因。
+   (`npm run dev` 也可以:只啟動伺服器,不自動打開瀏覽器。)
+4. 瀏覽器開啟 http://localhost:5173/ :影片鋪滿整個視窗,自動循環播放;第一次點擊或按鍵進入全螢幕。是否同時播放歌曲由 `config.json → player.sound` 決定。
 5. 導出影片:`npm run export:preview`(1080p60)或 `npm run export:4k`(4K60),輸出在 `out/`。
 
 `ffmpeg` 由 `ffmpeg-static` 提供(`node_modules/ffmpeg-static/ffmpeg.exe` 不存在時執行一次 `node node_modules/ffmpeg-static/install.js`)。
@@ -161,8 +162,11 @@ The project was made and tested on Windows 11 only.
    npm run preview
    ```
 
-4. The browser opens http://localhost:5173/ : press play. Without an audio file the picture still plays, silently; the `sound` line under the picture says why.
+   (`npm run dev` works too: it starts the server without opening a browser.)
+4. The browser opens http://localhost:5173/ : the film fills the window; when the countdown of the warning page ends, `$ run` waits for Enter (or a click / tap), then the song and the film start and loop; that first press also goes full screen. Whether the song plays along is set by `config.json → player.sound`.
 5. Export a video: `npm run export:preview` (1080p60) or `npm run export:4k` (4K60); the files go to `out/`.
+6. Publish on GitHub Pages: `npm run deploy` builds the site (`dist/`, also `npm run build` alone) and pushes it to the `gh-pages` branch;
+   then, once, Settings → Pages → Deploy from a branch → `gh-pages`, `/ (root)`. The site carries the song and the lyrics: publishing it makes them public.
 
 `ffmpeg` comes from `ffmpeg-static` (if `node_modules/ffmpeg-static/ffmpeg.exe` is missing, run `node node_modules/ffmpeg-static/install.js` once).
 Python is needed only to re-analyse the audio and to check an exported file.
@@ -207,14 +211,26 @@ the prompt of version 4 was written when version 3 already existed.
 ## 直接在網頁上看
 
 ```bash
-npm run preview
+npm run dev        # 或 npm run preview:同時自動打開瀏覽器
 ```
-開啟 http://localhost:5173/ :與音頻同步播放,可拖動進度條(從 −5 秒的警告頁開始);畫面下方顯示目前的**鏡頭 id、顏色狀態、以及它是對話裡的哪個時刻**。
-`?t=150` 直接跳到歌曲的某一秒,`?w=1920&h=1080` 以 1080p 預覽。空白鍵播放 / 暫停,←/→ 跳 1 秒,`,` `.` 逐幀。
-開啟時畫面上有載入進度(設定、分析資料、字體、剪影、鏡頭,一項一格);畫面下方的 `sound` 一行顯示聲音的狀態。
-聲音放不出來時(沒有音檔、瀏覽器不讓它開始、音頻一直沒有前進)畫面不會停住:預覽改以無聲繼續,並在 `sound` 一行寫明原因;
-能重試的情況下,按暫停再按播放就會再試一次。
+開啟 http://localhost:5173/ :頁面上沒有任何控制項,影片鋪滿視窗(16:9,多出的部分是黑邊),從 −5 秒的命令列警告頁開始;第一次倒數結束時下一行出現 `$ run`,按 Enter(或點擊 / 輕觸畫面)後歌曲與影片才開始,之後播完回到警告頁自動循環。
+警告頁同時是載入頁:它只需要等寬字體與那一行中文的字形,其餘字體、剪影與鏡頭在它播放時繼續載入;載入還沒完成時,停在倒數之前等待。
+第一次點擊或按鍵進入全螢幕(瀏覽器只允許由使用者觸發),之後雙擊或按 F 切換;滑鼠靜止 2 秒後隱藏;播放時螢幕不會休眠。
+渲染尺寸跟著畫面在螢幕上的實際像素(最大 1920×1080),最多 60 fps;連續掉幀時自動降一級。`?w=1920&h=1080` 固定渲染尺寸,`?t=150` 從歌曲的某一秒開始。
+`config.json → player.sound` 為 `true` 時與歌曲同步播放(瀏覽器不讓自動出聲時,第一次點擊後開始出聲;聲音放不出來時畫面以無聲繼續);
+為 `false` 時不載入音檔,畫面以自己的時鐘無聲播放。
 `?lab=plates`(或 `inks`、`glyph`、`walls`、`verse2`、`pre2`、`history`、`love`、`closeups`)改看「檢查卡」:單獨的一張圖,不帶歌詞。
+
+## 部署到 GitHub Pages
+
+```bash
+npm run build      # 只建站:dist/(頁面、程式、資料、你的歌詞、剪影、只含用到字形的字體、壓成 AAC 的歌)
+npm run deploy     # 建站並把 dist/ 推到 gh-pages 分支
+```
+第一次部署後,在 GitHub 的 Settings → Pages → Build and deployment 選 **Deploy from a branch**,分支 `gh-pages`、`/ (root)`;
+網址是 `https://<帳號>.github.io/<倉庫名>/`。頁面裡的路徑都是相對的,放在任何子目錄都能用。
+建站在本機進行,不用 GitHub Actions:歌曲與歌詞不在倉庫裡(main 分支也不放),但 **gh-pages 分支與網站上會有它們,等於公開**。
+網頁上瀏覽器不允許自動出聲,訪客點一下畫面後才有聲音(`npm run dev` 開的獨立視窗不受此限)。
 
 ## 其他命令
 
@@ -386,7 +402,7 @@ export/           server.mjs(靜態伺服器)、export.mjs(無頭 Chrome → ffm
 ## 確定性
 
 - 每一幀只由 `renderFrame(t)` 決定:不讀牆上時鐘,不保留跨幀狀態;隨機數來自 `prng.js`(種子 + 整數鍵)。
-- 字體與角色圖在第一幀之前全部載入並處理完(分版、描路徑只做一次);渲染時不讀回像素。
+- 字體與角色圖在用到它們的第一幀之前載入並處理完(分版、描路徑只做一次;網頁上片頭警告頁先以自己的兩種字體開始,其餘在它後面載入);渲染時不讀回像素。
   `ctx.text` 遇到字體沒有的字元會報錯,而不是悄悄退回系統字體。
 - 已知限制(第二版遺留):經 GPU 後處理的最終畫面,同一時間點重複渲染時可能有極少數位元組相差 1/255(肉眼不可見)。
   另有一格(144.34 秒,glitch 轉場的第一瞬間)在兩次渲染之間會有約 0.2 % 像素不同,第三版即如此。

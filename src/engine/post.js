@@ -176,10 +176,11 @@ void main() {
 const LEVELS = 5;
 
 export class Post {
-  constructor(canvas, cfg) {
+  /** keepFrame: the drawing buffer survives being shown (readPixels at any later time); costs a copy per frame. */
+  constructor(canvas, cfg, { keepFrame = true } = {}) {
     this.canvas = canvas;
     this.cfg = cfg;
-    const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
+    const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: keepFrame, powerPreference: 'high-performance' });
     if (!gl) throw new Error('WebGL2 is not available');
     this.gl = gl;
     // half-float bloom buffers avoid banding in the dark glow falloff
@@ -190,6 +191,9 @@ export class Post {
     this.pBlur = this._program(FS_BLUR);
     this.pComp = this._program(FS_COMP);
     this.texA = this._texture(); this.texB = this._texture(); this.texHud = this._texture();
+    // stands in for an empty HUD layer: one transparent pixel instead of a full-size upload of nothing
+    this.texNone = this._texture();
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
     this.levels = [];
     this.vao = gl.createVertexArray();
   }
@@ -289,8 +293,15 @@ export class Post {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
+  /** Bind a texture to a unit without uploading anything. */
+  _bind(tex, unit) {
+    const gl = this.gl;
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+  }
+
   /**
-   * @param layers  { a: canvas, b: canvas|null, hud: canvas }
+   * @param layers  { a: canvas, b: canvas|null, hud: canvas|null }   (hud null = nothing on the overlay layer)
    * @param tr      { type, k, p[4], edge[3] } from resolveTransition()
    * @param fx      shared per-frame effect parameters
    * @param look    { tint[3], flashCol[3], moshCol[3], glow } derived from the active palette(s), 0..1
@@ -302,9 +313,10 @@ export class Post {
     gl.disable(gl.DITHER);
     this._unbindAll();
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    // each layer canvas is uploaded once: without an incoming shot, unit 1 samples the same texture as unit 0
     this._upload(this.texA, 0, layers.a);
-    this._upload(this.texB, 1, layers.b ?? layers.a);
-    this._upload(this.texHud, 2, layers.hud, true);
+    if (layers.b) this._upload(this.texB, 1, layers.b); else this._bind(this.texA, 1);
+    if (layers.hud) this._upload(this.texHud, 2, layers.hud, true); else this._bind(this.texNone, 2);
 
     // 1. transition + HUD
     this._pass(this.pMix, this.mixed, this.texA, (gl, u) => {
