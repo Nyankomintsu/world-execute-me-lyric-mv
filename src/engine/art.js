@@ -50,12 +50,12 @@ export async function loadArt(cfg, step = () => {}) {
   const dir = cfg.paths.art, art = new Art();
   await Promise.all(ART_NAMES.map(async (name) => {
     const img = new Image();
-    img.src = `/${dir}/${name}.png`;
+    img.src = `${dir}/${name}.png`;
     await img.decode();
     art._prepareInk(name, img);
     await step(`silhouette  ${name}`);
   }));
-  try { art.regions = await (await fetch(`/${dir}/regions.json`)).json(); } catch { art.regions = {}; }
+  try { art.regions = await (await fetch(`${dir}/regions.json`)).json(); } catch { art.regions = {}; }
   return art;
 }
 

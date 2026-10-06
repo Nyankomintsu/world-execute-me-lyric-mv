@@ -2,69 +2,32 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>world.execute(me); — lyric MV preview</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>world.execute(me);</title>
+<link rel="icon" href="data:,">
 <style>
-  html, body { margin: 0; background: #05070a; color: #b9cfe3; font: 13px/1.5 Consolas, "JetBrains Mono", monospace; }
-  body.export { background: #000; overflow: hidden; }
-  body.export #ui, body.export #loading { display: none; }
-  #wrap { max-width: 980px; margin: 18px auto; padding: 0 10px; }
-  #stage { position: relative; }
-  canvas#view { display: block; box-sizing: border-box; width: 100%; max-width: 960px; height: auto; aspect-ratio: 16 / 9; background: #000; border: 1px solid #1c2a3a; }
-  body.export canvas#view { border: 0; width: auto; height: auto; max-width: none; aspect-ratio: auto; }
-  /* shown over the picture until the first frame is drawn (src/main.js: boot) */
-  #loading { position: absolute; inset: 0; max-width: 960px; display: flex; align-items: center; justify-content: center; background: #05070a; border: 1px solid #1c2a3a; box-sizing: border-box; }
-  #loading[hidden] { display: none; }
-  #loadBox { width: min(420px, 80%); }
-  #loadTitle { color: #d7e9fa; margin-bottom: 10px; }
-  #loadTitle span { color: #5f87ab; }
-  #loadBar { height: 4px; background: #0e1722; border: 1px solid #1c2a3a; }
-  #loadFill { display: block; height: 100%; width: 0; background: #8fbfe8; transition: width 0.12s linear; }
-  #loadText { margin-top: 8px; color: #5f87ab; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
-  #loading.failed #loadFill { background: #e8788f; }
-  #loading.failed #loadText { color: #e8788f; white-space: normal; }
-  #bar { display: flex; gap: 10px; align-items: center; margin-top: 10px; }
-  #seek { flex: 1; accent-color: #8fbfe8; }
-  button { background: #0e1722; color: #d7e9fa; border: 1px solid #2b4460; padding: 5px 14px; font: inherit; cursor: pointer; min-width: 74px; }
-  button:hover { border-color: #8fbfe8; }
-  button:disabled { color: #4e6a85; border-color: #1c2a3a; cursor: default; }
-  #info { margin-top: 8px; display: grid; grid-template-columns: 150px 1fr; gap: 2px 12px; }
-  #info b { color: #5f87ab; font-weight: normal; }
-  #info .warn { color: #e8b478; }
-  #help { margin-top: 10px; color: #4e6a85; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color: #b9cfe3; font: 13px/1.5 Consolas, "JetBrains Mono", monospace; }
+  /* the picture fills the window at 16:9, black bars on the longer side */
+  #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #000; }
+  canvas#view { display: block; width: min(100vw, 100vh * 16 / 9); height: min(100vh, 100vw * 9 / 16); background: #000; }
+  @supports (height: 100dvh) { canvas#view { width: min(100vw, 100dvh * 16 / 9); height: min(100dvh, 100vw * 9 / 16); } }
+  body.idle, body.idle * { cursor: none; }
+  body.export #stage { position: static; display: block; }
+  body.export canvas#view { width: auto; height: auto; }
+  body.export #error { display: none; }
+  /* the warning page fades in from black with its first frame (src/main.js) */
+  canvas#view:not(.on) { opacity: 0; }
+  canvas#view { transition: opacity 0.4s; }
+  body.export canvas#view { transition: none; opacity: 1; }
+  /* only when the film cannot start */
+  #error { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: 80vw; color: #e8788f; white-space: pre-wrap; }
 </style>
 </head>
-<body>
-<div id="wrap">
-  <div id="stage">
-    <canvas id="view"></canvas>
-    <div id="loading">
-      <div id="loadBox">
-        <div id="loadTitle">world.execute(me); <span>— loading the preview</span></div>
-        <div id="loadBar"><i id="loadFill"></i></div>
-        <div id="loadText">config.json</div>
-      </div>
-    </div>
-  </div>
-  <div id="ui">
-    <div id="bar">
-      <button id="play" disabled>play</button>
-      <input id="seek" type="range" min="0" max="1" step="0.001" value="0">
-      <span id="clock">00:00.000</span>
-    </div>
-    <div id="info">
-      <b>t (s) / frame@60</b><span id="iT">-</span>
-      <b>lyric line</b><span id="iLine">-</span>
-      <b>beat / bar</b><span id="iBeat">-</span>
-      <b>shot [colour state]</b><span id="iScene">-</span>
-      <b>moment</b><span id="iMoment">-</span>
-      <b>sound</b><span id="iAudio">-</span>
-      <b>render</b><span id="iPerf">-</span>
-    </div>
-    <div id="help">space: play/pause · ←/→: ±1 s · shift+←/→: ±5 s · , / . : ±1 frame · URL: ?t=12.5 jumps to a time (song time; the warning page before the song is at negative time)</div>
-    <audio id="audio" preload="auto"></audio>
-  </div>
-</div>
-<script type="module" src="/src/main.js"></script>
+<body class="idle">
+<div id="stage"><canvas id="view"></canvas></div>
+<div id="error" hidden></div>
+<audio id="audio" preload="auto"></audio>
+<script type="module" src="src/main.js"></script>
 </body>
 </html>

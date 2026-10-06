@@ -77,17 +77,19 @@ export function overlayScene({ cfg, features }) {
     ['Claude is a trademark of Anthropic.  Music: "world.execute(me);" by Mili.', '#7d7b73'],
     ['Character silhouettes supplied by the maker of this video.  Interface drawn in code.', '#7d7b73'],
   ];
+  const wEnd = cfg.safety.warningSeconds, credits = (t) => prog(t, T_OFF + 1.6, T_OFF + 2.4) * (1 - prog(t, features.duration - 0.6, features.duration - 0.1));
   return {
     id: 'overlay', overlay: true, z: 100, start: -1e9, end: 1e9,
+    /** Whether render() draws anything at t: the engine leaves the overlay layer out of every other frame. */
+    visible: (t) => (t > 0.9 && t < wEnd) || credits(t) > 0,
     render(ctx, t) {
-      const wEnd = cfg.safety.warningSeconds;
       if (t > 0.9 && t < wEnd) {
         toast(ctx, { x: 960 - 300, y: 24, w: 600, h: 58 }, {
           title: 'This video contains flashing images', tone: 'info', icon: '!',
           k: prog(t, 0.9, 1.3), out: easeOut(prog(t, wEnd - 0.5, wEnd)),
         });
       }
-      const a = prog(t, T_OFF + 1.6, T_OFF + 2.4) * (1 - prog(t, features.duration - 0.6, features.duration - 0.1));
+      const a = credits(t);
       if (a > 0) NOTE.forEach(([s, col], i) => ctx.text(s, 960, 502 + i * 46, { size: 26, color: col, alpha: a, align: 'center', weight: i ? 400 : 500 }));
     },
   };

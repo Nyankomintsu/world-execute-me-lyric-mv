@@ -9,71 +9,94 @@ import { Features } from './features.js';
 import { Lyrics } from './lyrics.js';
 import { Ctx } from './draw.js';
 import { Post } from './post.js';
-import { loadArt, ART_NAMES } from './art.js';
+import { loadArt } from './art.js';
 import { buildPalettes, mixPal } from './palette.js';
 import { resolveTransition } from './transitions.js';
 import { clamp } from './util.js';
 import { buildScenes } from '../scenes/index.js';
+import { prerollShot } from '../scenes/overlay.js';
+import { sequence } from '../scenes/shot.js';
 
-/** Load every font before the first frame, so text never renders in a fallback face. `step` is told of each one. */
-async function loadFonts(cfg, step) {
-  const jobs = [];
-  for (const key of ['mono', 'serif', 'sans']) {
+/** What the warning page before the song is set in: the mono face and the one CJK role of its Chinese line. */
+const LEAD = { latin: ['mono'], cjk: ['tcSans'] };
+
+/**
+ * Load fonts before the first frame that uses them, so text never renders in a fallback face.
+ * which = { latin: [mono | serif | sans ...], cjk: [role ...] }, or null for all of them.
+ */
+async function loadFonts(cfg, which = null) {
+  const jobs = [], base = cfg.paths.fonts ?? 'node_modules/@fontsource';     // relative to the page (the site build has its own copy)
+  for (const key of which?.latin ?? ['mono', 'serif', 'sans']) {
     const { family, pkg, weights, italic = [] } = cfg.fonts[key];
     const add = (w, style) => {
-      const face = new FontFace(family, `url("/node_modules/@fontsource/${pkg}/files/${pkg}-latin-${w}-${style}.woff2")`, { weight: String(w), style });
-      jobs.push(face.load().then((f) => { document.fonts.add(f); step(`font  ${family} ${w}${style === 'italic' ? ' italic' : ''}`); }));
+      const face = new FontFace(family, `url("${base}/${pkg}/files/${pkg}-latin-${w}-${style}.woff2")`, { weight: String(w), style });
+      jobs.push(face.load().then((f) => { document.fonts.add(f); }));
     };
     weights.forEach((w) => add(w, 'normal'));
     italic.forEach((w) => add(w, 'italic'));
   }
   await Promise.all(jobs);
-  // CJK faces ship as ~100 unicode-range slices each; link the package CSS and let the browser
-  // fetch only the slices that contain the glyphs we use, then wait for exactly those.
-  for (const c of cfg.fonts.cjk || []) {
-    await new Promise((res, rej) => {
-      const link = document.createElement('link');
-      link.rel = 'stylesheet'; link.href = `/node_modules/@fontsource/${c.pkg}/${c.weight}.css`;
-      link.onload = res; link.onerror = () => rej(new Error('font css failed: ' + c.pkg));
-      document.head.appendChild(link);
-    });
-    // resolves with the faces it loaded: none means that no slice of the family holds these glyphs (or the
-    // CSS did not declare the family), and the card would be set in a system font without any sign of it
-    const faces = await document.fonts.load(`${c.weight} 64px "${c.family}"`, c.text);
+  // CJK faces ship as ~100 unicode-range slices each. Their stylesheet is read here, and only the slices that hold the
+  // characters a role draws are loaded, as FontFace objects like the Latin files. (Linking the stylesheet and asking
+  // document.fonts.load() does not work in Safari: it answers that no face was loaded.)
+  await Promise.all((cfg.fonts.cjk || []).filter((c) => !which || which.cjk.includes(c.role)).map(async (c) => {
+    const href = new URL(`${base}/${c.pkg}/${c.weight}.css`, location.href), r = await fetch(href);
+    if (!r.ok) throw new Error(`font css failed: ${c.pkg} ${c.weight} (HTTP ${r.status})`);
+    const left = new Set([...(c.text ?? '')].map((ch) => ch.codePointAt(0)).filter((cp) => cp > 32)), faces = [];
+    for (const block of (await r.text()).match(/@font-face\s*{[^}]*}/g) ?? []) {
+      const file = /url\(\s*['"]?([^'")]+\.woff2)/.exec(block)?.[1], ur = /unicode-range:\s*([^;}]+)/.exec(block)?.[1].trim();
+      if (!file) continue;
+      const spans = ur ? ur.split(',').map((s) => s.trim().replace(/^U\+/i, '').split('-').map((h) => parseInt(h, 16))).map(([a, b = a]) => [a, b]) : null;
+      const holds = [...left].filter((cp) => !spans || spans.some(([a, b]) => cp >= a && cp <= b));
+      if (!holds.length) continue;
+      holds.forEach((cp) => left.delete(cp));
+      faces.push(new FontFace(c.family, `url("${new URL(file, href).href}")`, { weight: String(c.weight), style: 'normal', ...(ur ? { unicodeRange: ur } : {}) }));
+    }
+    // no slice at all: the role would be set in a system font without any sign of it
     if (!faces.length) throw new Error(`no font face for ${c.role}: ${c.family} ${c.weight} does not cover its configured text`);
-    step(`font  ${c.family} ${c.weight}`);
-  }
+    if (left.size) console.warn(`[fonts] ${c.role}: no slice of ${c.family} ${c.weight} holds ${[...left].map((cp) => String.fromCodePoint(cp)).join('')}`);
+    await Promise.all(faces.map((f) => f.load().then(() => document.fonts.add(f))));
+  }));
 }
 
-/** How many things createEngine reports to `onStep` while it loads: every font, every silhouette, the scenes. */
-export function loadSteps(cfg) {
-  let n = (cfg.fonts.cjk || []).length + ART_NAMES.length + 1;
-  for (const key of ['mono', 'serif', 'sans']) n += cfg.fonts[key].weights.length + (cfg.fonts[key].italic || []).length;
-  return n;
-}
+// with the version tag of the site build, if any (see src/main.js)
+const getJson = async (p) => { try { return await (await fetch(p.split('/').map(encodeURIComponent).join('/') + new URL(import.meta.url).search)).json(); } catch { return null; } };
 
-const getJson = async (p) => { try { return await (await fetch('/' + p.split('/').map(encodeURIComponent).join('/'))).json(); } catch { return null; } };
-
-/** onStep(label), preview only: called as each thing is loaded (the page's progress bar); it never touches a frame. */
-export async function createEngine({ canvas, width, height, cfg, featuresData, lyricsData, flipY = false, lab = null, onStep = null }) {
+/**
+ * Resolves as soon as the warning page before the song can be drawn (its two fonts are in): that page is the
+ * loading page. Everything else (the other fonts, the silhouettes, the sections) goes on loading behind it, and
+ * `ready` resolves once the whole film can be drawn; until then renderFrame() only knows the warning page.
+ * keepFrame: keep the picture after it is shown, for readPixels() later on (the exporter); the player does without.
+ */
+export async function createEngine({ canvas, width, height, cfg, featuresData, lyricsData, flipY = false, lab = null, keepFrame = true }) {
   setSeed(cfg.seed);
-  const step = onStep ?? (() => {});
-  const [, art, script, errors] = await Promise.all([loadFonts(cfg, step), loadArt(cfg, step), getJson(cfg.paths.script), getJson(cfg.paths.errors)]);
-
   const palettes = buildPalettes(cfg.palettes);
   const mk = (alpha) => new Ctx(document.createElement('canvas'), cfg, palettes, { alpha });
   const layerA = mk(false), layerB = mk(false), over = mk(true);
-  const post = new Post(canvas, cfg);
+  const post = new Post(canvas, cfg, { keepFrame });
 
   const features = new Features(featuresData, cfg);
   const lyrics = new Lyrics(lyricsData, cfg, features);
-  // env: what every section file receives. art = character illustrations, script / errors = the written conversation.
-  const all = await buildScenes({ cfg, features, lyrics, art, script: script ?? {}, errors: errors ?? {} }, { lab });
-  await step('scenes');
-  // in cut order (not by `start`: a lead-in may begin before the cut of the shot it follows), so of two live
-  // shots the later one is always the incoming one
-  const content = all.filter((s) => !s.overlay).sort((a, b) => (a.at ?? a.start) - (b.at ?? b.start));
-  const overlays = all.filter((s) => s.overlay).sort((a, b) => (a.z || 0) - (b.z || 0));
+  const lead = lab ? null : prerollShot({ cfg, lyrics });
+
+  let content = [], overlays = [];
+  /** Takes the shot list: in cut order (not by `start`: a lead-in may begin before the cut of the shot it follows), so
+   *  of two live shots the later one is always the incoming one. */
+  const use = (all) => {
+    content = all.filter((s) => !s.overlay).sort((a, b) => (a.at ?? a.start) - (b.at ?? b.start));
+    overlays = all.filter((s) => s.overlay).sort((a, b) => (a.z || 0) - (b.z || 0));
+  };
+  const rest = (async () => {
+    const [, art, script, errors] = await Promise.all([loadFonts(cfg, lead ? { latin: ['serif', 'sans'], cjk: cfg.fonts.cjk.map((c) => c.role).filter((r) => !LEAD.cjk.includes(r)) } : null),
+      loadArt(cfg), getJson(cfg.paths.script), getJson(cfg.paths.errors)]);
+    // env: what every section file receives. art = character illustrations, script / errors = the written conversation.
+    use(await buildScenes({ cfg, features, lyrics, art, script: script ?? {}, errors: errors ?? {} }, { lab }));
+  })();
+  rest.catch(() => {});                          // (reported through `ready`; this only keeps an early failure quiet)
+  if (lead) {
+    await loadFonts(cfg, LEAD);
+    use(sequence([lead], 0));                    // the warning page alone, up to the song (it ends on a cut)
+  } else await rest;
 
   function resize(w, h) {
     for (const l of [layerA, layerB, over]) { l.canvas.width = w; l.canvas.height = h; }
@@ -143,11 +166,14 @@ export async function createEngine({ canvas, width, height, cfg, featuresData, l
     const tv = t - cfg.timing.offset;            // global sync offset (see config.json)
     const f = features.sample(tv);
     const fx = defaultFx(f, t);
-    for (const l of [layerA, layerB, over]) { l.begin(tv, f, t, fx); l.statePal = null; }
 
     // at most two content shots are live: A (outgoing) and B (incoming)
     const live = content.filter((s) => tv >= s.start && tv < s.end);
     const A = live.length > 1 ? live[live.length - 2] : live[0], B = live.length > 1 ? live[live.length - 1] : null;
+    // a layer is set up (and cleared) only when something is drawn on it this frame: layer B only during an overlap,
+    // the overlay layer only while an overlay scene shows anything (its visible(t), if it has one)
+    const hud = overlays.filter((sc) => tv >= sc.start && tv < sc.end && (!sc.visible || sc.visible(tv)));
+    for (const l of [layerA, B && layerB, hud.length && over]) if (l) { l.begin(tv, f, t, fx); l.statePal = null; }
     if (A) drawScene(layerA, A, tv, f); else { layerA.setPal('dead'); layerA.clear(); }
     // the palette a shot is IN (statePal, set by sequence()), not whatever a ctx.setPal() inside it left behind
     const palA = layerA.statePal ?? layerA.pal;
@@ -164,8 +190,10 @@ export async function createEngine({ canvas, width, height, cfg, featuresData, l
     }
     const tr = resolveTransition(B ? B.enter : null, k, pal);
 
-    over.pal = pal; over.clear();
-    for (const sc of overlays) if (tv >= sc.start && tv < sc.end) drawScene(over, sc, tv, f);
+    if (hud.length) {
+      over.pal = pal; over.clear();
+      for (const sc of hud) drawScene(over, sc, tv, f);
+    }
 
     const n = (c) => c.map((v) => v / 255);
     // What the bloom has to know about each shot, because during an overlap every pixel still belongs to one of
@@ -176,11 +204,14 @@ export async function createEngine({ canvas, width, height, cfg, featuresData, l
       tint: n(pal.bloom), flashCol: n(fx.flashColor ?? pal.bloom), moshCol: n(pal.err), bg: n(pal.bg).map((v) => v * 1.03), glow: pal.glow,
       a: feed(palA, glowA), b: B ? feed(palB, glowB) : null,
     };
-    post.render({ a: layerA.canvas, b: B ? layerB.canvas : null, hud: over.canvas }, tr, fx, look, Math.round(t * 60), flipY);
+    post.render({ a: layerA.canvas, b: B ? layerB.canvas : null, hud: hud.length ? over.canvas : null }, tr, fx, look, Math.round(t * 60), flipY);
   }
 
   return {
-    renderFrame, resize, features, lyrics, scenes: all, palettes, post, art,
+    renderFrame, resize, features, lyrics, palettes, post,
+    /** Resolves once the whole film can be drawn (rejects if it cannot). */
+    ready: rest,
+    get scenes() { return [...content, ...overlays]; },
     duration: features.duration,
     /** The film starts this many seconds BEFORE the song (the warning page); t in renderFrame(t) is song time. */
     preroll: lab ? 0 : cfg.safety.preroll ?? 0,

@@ -79,8 +79,9 @@ if (SHEET) {
   ffArgs = [...rawIn, '-framerate', '1', '-i', 'pipe:0', '-vf', `tile=${cols}x${rows}:padding=6:color=0x303030`, '-frames:v', '1', OUT];
 } else {
   CODEC = pickCodec();
-  // audio: the song from max(0, start); if the export starts before the song, it is delayed by that lead (in samples: exact)
-  const lead = Math.max(0, -firstFrame / FPS), aStart = Math.max(0, firstFrame / FPS);
+  // audio: the file from where the first frame falls in it (timing.audioStart = song time of its first sample); if the
+  // export starts before the file, it is delayed by that lead (in samples: exact)
+  const at = firstFrame / FPS - (cfg.timing.audioStart ?? 0), lead = Math.max(0, -at), aStart = Math.max(0, at);
   ffArgs = [
     ...rawIn, '-framerate', String(FPS), '-thread_queue_size', '64', '-i', 'pipe:0',
     '-ss', String(aStart), '-t', String(total / FPS - lead), '-i', path.join(ROOT, cfg.paths.audio),
