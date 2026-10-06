@@ -12,6 +12,8 @@
 
 # renders (the videos carry the song)
 /out/
+# the site (npm run build): it carries the song and the lyrics; npm run deploy publishes it on the gh-pages branch
+/dist/
 
 # the maker's source pictures and older versions: not part of the repository
 /圖片/

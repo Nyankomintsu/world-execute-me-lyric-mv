@@ -19,9 +19,15 @@
     "exactRaster": false
   },
 
+  "player": {
+    "_doc": "The page (npm run dev): the film fills the window and plays on a loop. sound = play the song from paths.audio along with it; false = the film runs silently on its own clock and the audio file is not loaded at all.",
+    "sound": true
+  },
+
   "timing": {
-    "_doc": "offset>0 makes ALL visuals (lyrics + beat reactions) happen later; lyricOffset shifts lyrics only. keywordSnap: ALL-CAPS lines snap to the nearest beat if within this many seconds (0 = off). Seconds.",
+    "_doc": "offset>0 makes ALL visuals (lyrics + beat reactions) happen later; lyricOffset shifts lyrics only. keywordSnap: ALL-CAPS lines snap to the nearest beat if within this many seconds (0 = off). audioStart = the song time of the first sample of paths.audio: 0 for the song itself, -5 (= -safety.preroll) for the sound track of an exported film, which has the 5 s of the warning page in front (the page and the exporter both read it). Seconds.",
     "offset": 0.0,
+    "audioStart": 0.0,
     "lyricOffset": 0.0,
     "keywordSnap": 0.06,
     "lyricMaxHold": 4.0,
